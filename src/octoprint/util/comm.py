@@ -13,6 +13,7 @@ import threading
 import Queue as queue
 import logging
 import serial
+import subprocess
 
 from collections import deque
 
@@ -186,6 +187,9 @@ class MachineCom(object):
 		# multithreading locks
 		self._sendNextLock = threading.Lock()
 		self._sendingLock = threading.Lock()
+
+		# Octoprint remote from printer message
+		self._regex_command = re.compile("octopi (.*)", re.IGNORECASE)
 
 		# monitoring thread
 		self.thread = threading.Thread(target=self._monitor)
@@ -654,6 +658,24 @@ class MachineCom(object):
 						self._sdFiles.append(filename)
 					continue
 
+				##~~ Remote control
+				if line.strip().lower().startswith("octopi"):
+					matchCommand = self._regex_command.match(line.strip().lower())
+					if matchCommand is not None:
+						command = matchCommand.group(1)
+						availableActions = settings().get(["system", "actions"])
+						for availableAction in availableActions:
+							if availableAction["action"] == command:
+								self._logger.warn("Got remote command: %s" % command)
+								try:
+									p = subprocess.Popen(availableAction["command"], shell=True)
+									p.communicate()
+								except subprocess.CalledProcessError, e:
+									self._logger.warn("Command failed with return code %i: %s" % (e.returncode, e.message))
+								except Exception, ex:
+        								self._logger.exception("Command failed")
+					continue
+
 				##~~ Temperature processing
 				if ' T:' in line or line.startswith('T:') or ' T0:' in line or line.startswith('T0:'):
 					self._processTemperatures(line)
@@ -693,7 +715,6 @@ class MachineCom(object):
 							self._callback.mcTempUpdate(self._temp, self._bedTemp)
 						except ValueError:
 							pass
-
 				##~~ SD Card handling
 				elif 'SD init fail' in line or 'volume.init failed' in line or 'openRoot failed' in line:
 					self._sdAvailable = False
