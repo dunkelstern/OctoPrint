@@ -650,8 +650,13 @@ class MachineCom(object):
 
 				##~~ SD file list
 				# if we are currently receiving an sd file list, each line is just a filename, so just read it and abort processing
-				if self._sdFileList and isGcodeFileName(line.strip().lower()) and not 'End file list' in line:
+				if self._sdFileList and not 'End file list' in line:
 					filename = line.strip().lower()
+					if not isGcodeFileName(filename):
+						filename = line.strip().lower().split(" ")[0]
+						if not isGcodeFileName(filename):
+							continue
+					self._logger.debug("Got file %s" % filename)
 					if filterNonAscii(filename):
 						self._logger.warn("Got a file from printer's SD that has a non-ascii filename (%s), that shouldn't happen according to the protocol" % filename)
 					else:
@@ -716,7 +721,7 @@ class MachineCom(object):
 						except ValueError:
 							pass
 				##~~ SD Card handling
-				elif 'SD init fail' in line or 'volume.init failed' in line or 'openRoot failed' in line:
+				if 'SD init fail' in line or 'volume.init failed' in line or 'openRoot failed' in line:
 					self._sdAvailable = False
 					self._sdFiles = []
 					self._callback.mcSdStateChange(self._sdAvailable)
@@ -730,9 +735,11 @@ class MachineCom(object):
 					self.refreshSdFiles()
 					self._callback.mcSdStateChange(self._sdAvailable)
 				elif 'Begin file list' in line:
+					self._logger.debug("SD file list begins...")
 					self._sdFiles = []
 					self._sdFileList = True
 				elif 'End file list' in line:
+					self._logger.debug("SD file list ended...")
 					self._sdFileList = False
 					self._callback.mcSdFiles(self._sdFiles)
 				elif 'SD printing byte' in line:
