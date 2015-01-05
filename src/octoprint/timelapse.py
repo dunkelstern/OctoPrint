@@ -226,8 +226,12 @@ class Timelapse(object):
 			self._logger.warn("Cannot capture image, capture directory is unset")
 			return
 
+		if self._imageNumber is None:
+			self._logger.warn("Cannot capture image, image number is unset")
+			return
+
 		with self._captureMutex:
-			filename = os.path.join(self._captureDir, "tmp_%05d.jpg" % (self._imageNumber))
+			filename = os.path.join(self._captureDir, "tmp_%05d.jpg" % self._imageNumber)
 			self._imageNumber += 1
 		self._logger.debug("Capturing image to %s" % filename)
 		captureThread = threading.Thread(target=self._captureWorker, kwargs={"filename": filename})
@@ -236,10 +240,16 @@ class Timelapse(object):
 		return filename
 
 	def _captureWorker(self, filename):
-		eventManager().fire(Events.CAPTURE_START, {"file": filename});
-		urllib.urlretrieve(self._snapshotUrl, filename)
-		self._logger.debug("Image %s captured from %s" % (filename, self._snapshotUrl))
-		eventManager().fire(Events.CAPTURE_DONE, {"file": filename});
+		eventManager().fire(Events.CAPTURE_START, {"file": filename})
+		try:
+			urllib.urlretrieve(self._snapshotUrl, filename)
+			self._logger.debug("Image %s captured from %s" % (filename, self._snapshotUrl))
+		except:
+			self._logger.exception("Could not capture image %s from %s, decreasing image counter again" % (filename, self._snapshotUrl))
+			with self._captureMutex:
+				if self._imageNumber is not None and self._imageNumber > 0:
+					self._imageNumber -= 1
+		eventManager().fire(Events.CAPTURE_DONE, {"file": filename})
 
 	def _createMovie(self, success=True):
 		ffmpeg = settings().get(["webcam", "ffmpeg"])
